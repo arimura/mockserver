@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"encoding/json"
 )
 
 type EndpointInfo struct {
@@ -38,6 +40,16 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
 		info("register endpoint on " + endpointInfo.urlPath)
 		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
 			info(fmt.Sprintf("%s %s %s", r.Method, r.URL, r.Proto))
+			info(r.UserAgent())
+			dump, _ := ioutil.ReadAll(r.Body)
+
+			var prettyJSON bytes.Buffer
+			error := json.Indent(&prettyJSON, dump, "", "  ")
+			if error == nil {
+				info(string(prettyJSON.Bytes()))
+			}else {
+				info(string(dump))
+			}
 			w.Header().Set("Content-Type", http.DetectContentType(data))
 			fmt.Fprintf(w, string(data))
 		})
