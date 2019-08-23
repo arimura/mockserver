@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -10,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"encoding/json"
 )
 
 type EndpointInfo struct {
@@ -32,6 +32,12 @@ func main() {
 }
 
 func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
+	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+		info(request.URL.String())
+		writer.WriteHeader(http.StatusNotFound)
+		writer.Write([]byte("404"))
+	})
+
 	for _, endpointInfo := range endpointInfos {
 		data, error := ioutil.ReadFile(endpointInfo.filePath)
 		if error != nil {
@@ -47,11 +53,11 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
 			error := json.Indent(&prettyJSON, dump, "", "  ")
 			if error == nil {
 				info(string(prettyJSON.Bytes()))
-			}else {
+			} else {
 				info(string(dump))
 			}
 			w.Header().Set("Content-Type", http.DetectContentType(data))
-			fmt.Fprintf(w, string(data))
+			fmt.Fprint(w, string(data))
 		})
 	}
 }
