@@ -32,8 +32,9 @@ func main() {
 }
 
 func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
-	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		info(request.URL.String())
+	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
+		info(r.URL.String())
+		info(r.UserAgent())
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write([]byte("404"))
 	})
