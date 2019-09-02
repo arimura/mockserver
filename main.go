@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type EndpointInfo struct {
@@ -21,17 +22,18 @@ type EndpointInfo struct {
 func main() {
 	dataPath := flag.String("data", "./data", "specify response dir")
 	port := flag.String("port", "8080", "specify port")
+	delay := flag.Int64("delay", 0, "mille sec delay for response")
 	flag.Parse()
 
 	endpointInfos := makeEndpointInfos(*dataPath)
 
 	info("start server on port " + *port)
 	mux := http.NewServeMux()
-	registerEndpoints(mux, endpointInfos)
+	registerEndpoints(mux, endpointInfos, *delay)
 	http.ListenAndServe(":"+*port, mux)
 }
 
-func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
+func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay int64) {
 	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
 		info(r.URL.String())
 		info(r.UserAgent())
@@ -48,6 +50,7 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo) {
 		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
 			info(fmt.Sprintf("%s %s %s", r.Method, r.URL, r.Proto))
 			info(r.UserAgent())
+			time.Sleep(time.Duration(delay) * time.Millisecond)
 			dump, _ := ioutil.ReadAll(r.Body)
 
 			var prettyJSON bytes.Buffer
