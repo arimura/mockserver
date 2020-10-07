@@ -1,5 +1,5 @@
 DATA:=data
 PORT:=8000
 
-start:
+run:
 	go run main.go -data=${DATA} -port=${PORT}
