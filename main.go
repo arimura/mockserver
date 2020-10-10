@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 type EndpointInfo struct {
@@ -27,10 +29,46 @@ func main() {
 
 	endpointInfos := makeEndpointInfos(*dataPath)
 
+	watch(*dataPath)
+
 	info("start server on port " + *port)
 	mux := http.NewServeMux()
 	registerEndpoints(mux, endpointInfos, *delay)
 	http.ListenAndServe(":"+*port, mux)
+}
+
+func watch(dataPath string) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		defer watcher.Close()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				log.Println("event:", event)
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Panicln("modified file:", event.Name)
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	log.Println("start watching:", dataPath)
+	err = watcher.Add(dataPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay int64) {
