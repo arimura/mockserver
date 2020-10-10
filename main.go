@@ -72,20 +72,24 @@ func watch(dataPath string) {
 }
 
 func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay int64) {
-	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
-
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write([]byte("404"))
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("404"))
 	})
 
 	for _, endpointInfo := range endpointInfos {
-		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			data, error := ioutil.ReadFile(endpointInfo.filePath)
-			if error != nil {
-				die(fmt.Sprintf("file doesn't exist: %s", endpointInfo.filePath))
-			}
+		//bind local var
+		ei := endpointInfo
+		mux.HandleFunc(ei.urlPath, func(w http.ResponseWriter, r *http.Request) {
 			info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
+
+			data, error := ioutil.ReadFile(ei.filePath)
+			if error != nil {
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte("404"))
+				return
+			}
 
 			time.Sleep(time.Duration(delay) * time.Millisecond)
 			dump, _ := ioutil.ReadAll(r.Body)
@@ -93,9 +97,9 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay i
 			var prettyJSON bytes.Buffer
 			error = json.Indent(&prettyJSON, dump, "", "  ")
 			if error == nil {
-				info(string(prettyJSON.Bytes()))
+				log.Printf("request body: %s\n", prettyJSON.Bytes())
 			} else {
-				info(string(dump))
+				log.Printf("request body: %s\n", string(dump))
 			}
 			w.Header().Set("Content-Type", http.DetectContentType(data))
 			fmt.Fprint(w, string(data))
