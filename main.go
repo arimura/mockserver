@@ -31,7 +31,7 @@ func main() {
 
 	watch(*dataPath)
 
-	info("start server on port " + *port)
+	log.Printf("start server on port %s", *port)
 	mux := http.NewServeMux()
 	registerEndpoints(mux, endpointInfos, *delay)
 	http.ListenAndServe(":"+*port, mux)
@@ -73,7 +73,7 @@ func watch(dataPath string) {
 
 func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay int64) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
+		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte("404"))
 	})
@@ -82,7 +82,7 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay i
 		//bind local var
 		ei := endpointInfo
 		mux.HandleFunc(ei.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
+			log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
 
 			data, error := ioutil.ReadFile(ei.filePath)
 			if error != nil {
@@ -136,10 +136,6 @@ func makeEndpointInfos(dirPath string) []endpointInfo {
 	})
 
 	return endpointInfos
-}
-
-func info(v string) {
-	log.Println(v)
 }
 
 func die(v string) {
