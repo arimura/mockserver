@@ -16,7 +16,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type EndpointInfo struct {
+type endpointInfo struct {
 	urlPath  string
 	filePath string
 }
@@ -71,28 +71,27 @@ func watch(dataPath string) {
 	}
 }
 
-func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay int64) {
+func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay int64) {
 	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
-		info(r.URL.String())
-		info(r.UserAgent())
+		info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
+
 		writer.WriteHeader(http.StatusNotFound)
 		writer.Write([]byte("404"))
 	})
 
 	for _, endpointInfo := range endpointInfos {
-		data, error := ioutil.ReadFile(endpointInfo.filePath)
-		if error != nil {
-			die(fmt.Sprintf("file doesn't exist: %s", endpointInfo.filePath))
-		}
-		info("register endpoint on " + endpointInfo.urlPath)
 		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			info(fmt.Sprintf("%s %s %s", r.Method, r.URL, r.Proto))
-			info(r.UserAgent())
+			data, error := ioutil.ReadFile(endpointInfo.filePath)
+			if error != nil {
+				die(fmt.Sprintf("file doesn't exist: %s", endpointInfo.filePath))
+			}
+			info(fmt.Sprintf("%s %s %s %s", r.Method, r.URL, r.Proto, r.UserAgent()))
+
 			time.Sleep(time.Duration(delay) * time.Millisecond)
 			dump, _ := ioutil.ReadAll(r.Body)
 
 			var prettyJSON bytes.Buffer
-			error := json.Indent(&prettyJSON, dump, "", "  ")
+			error = json.Indent(&prettyJSON, dump, "", "  ")
 			if error == nil {
 				info(string(prettyJSON.Bytes()))
 			} else {
@@ -104,7 +103,7 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay i
 	}
 }
 
-func makeEndpointInfos(dirPath string) []EndpointInfo {
+func makeEndpointInfos(dirPath string) []endpointInfo {
 	fi, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
 		die(fmt.Sprintf("not exists: %s", dirPath))
@@ -117,7 +116,7 @@ func makeEndpointInfos(dirPath string) []EndpointInfo {
 		dirPath = dirPath[2:]
 	}
 
-	var endpointInfos []EndpointInfo
+	var endpointInfos []endpointInfo
 	filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -125,7 +124,7 @@ func makeEndpointInfos(dirPath string) []EndpointInfo {
 		urlPath := strings.Replace(filePath, dirPath, "", 1)
 		urlPath = strings.Replace(urlPath, "__S__", "/", -1)
 
-		endpointInfos = append(endpointInfos, EndpointInfo{
+		endpointInfos = append(endpointInfos, endpointInfo{
 			urlPath,
 			filePath,
 		})
