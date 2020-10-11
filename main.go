@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
-type EndpointInfo struct {
+type endpointInfo struct {
 	urlPath  string
 	filePath string
 }
@@ -27,38 +29,77 @@ func main() {
 
 	endpointInfos := makeEndpointInfos(*dataPath)
 
-	info("start server on port " + *port)
+	watch(*dataPath)
+
+	log.Printf("start server on port %s", *port)
 	mux := http.NewServeMux()
 	registerEndpoints(mux, endpointInfos, *delay)
 	http.ListenAndServe(":"+*port, mux)
 }
 
-func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay int64) {
-	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
-		info(r.URL.String())
-		info(r.UserAgent())
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write([]byte("404"))
+func watch(dataPath string) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		defer watcher.Close()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				log.Println("event:", event)
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Panicln("modified file:", event.Name)
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	log.Println("start watching:", dataPath)
+	err = watcher.Add(dataPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay int64) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("404"))
 	})
 
 	for _, endpointInfo := range endpointInfos {
-		data, error := ioutil.ReadFile(endpointInfo.filePath)
-		if error != nil {
-			die(fmt.Sprintf("file doesn't exist: %s", endpointInfo.filePath))
-		}
-		info("register endpoint on " + endpointInfo.urlPath)
-		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			info(fmt.Sprintf("%s %s %s", r.Method, r.URL, r.Proto))
-			info(r.UserAgent())
+		//bind local var
+		ei := endpointInfo
+		mux.HandleFunc(ei.urlPath, func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
+
+			data, error := ioutil.ReadFile(ei.filePath)
+			if error != nil {
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte("404"))
+				return
+			}
+
 			time.Sleep(time.Duration(delay) * time.Millisecond)
 			dump, _ := ioutil.ReadAll(r.Body)
 
 			var prettyJSON bytes.Buffer
-			error := json.Indent(&prettyJSON, dump, "", "  ")
+			error = json.Indent(&prettyJSON, dump, "", "  ")
 			if error == nil {
-				info(string(prettyJSON.Bytes()))
+				log.Printf("request body: %s\n", prettyJSON.Bytes())
 			} else {
-				info(string(dump))
+				log.Printf("request body: %s\n", string(dump))
 			}
 			w.Header().Set("Content-Type", http.DetectContentType(data))
 			fmt.Fprint(w, string(data))
@@ -66,7 +107,7 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay i
 	}
 }
 
-func makeEndpointInfos(dirPath string) []EndpointInfo {
+func makeEndpointInfos(dirPath string) []endpointInfo {
 	fi, err := os.Stat(dirPath)
 	if os.IsNotExist(err) {
 		die(fmt.Sprintf("not exists: %s", dirPath))
@@ -79,7 +120,7 @@ func makeEndpointInfos(dirPath string) []EndpointInfo {
 		dirPath = dirPath[2:]
 	}
 
-	var endpointInfos []EndpointInfo
+	var endpointInfos []endpointInfo
 	filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -87,7 +128,7 @@ func makeEndpointInfos(dirPath string) []EndpointInfo {
 		urlPath := strings.Replace(filePath, dirPath, "", 1)
 		urlPath = strings.Replace(urlPath, "__S__", "/", -1)
 
-		endpointInfos = append(endpointInfos, EndpointInfo{
+		endpointInfos = append(endpointInfos, endpointInfo{
 			urlPath,
 			filePath,
 		})
@@ -95,10 +136,6 @@ func makeEndpointInfos(dirPath string) []EndpointInfo {
 	})
 
 	return endpointInfos
-}
-
-func info(v string) {
-	log.Println(v)
 }
 
 func die(v string) {
