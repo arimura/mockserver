@@ -27,6 +27,11 @@ func main() {
 	delay := flag.Int64("delay", 0, "mille sec delay for response")
 	flag.Parse()
 
+	fi, err := os.Stat(*dataPath)
+	if os.IsNotExist(err) || !fi.Mode().IsDir() {
+		log.Fatalf("No dir: %s", *dataPath)
+	}
+
 	endpointInfos := makeEndpointInfos(*dataPath)
 
 	watch(*dataPath)
@@ -108,14 +113,6 @@ func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay i
 }
 
 func makeEndpointInfos(dirPath string) []endpointInfo {
-	fi, err := os.Stat(dirPath)
-	if os.IsNotExist(err) {
-		die(fmt.Sprintf("not exists: %s", dirPath))
-	}
-	if !fi.Mode().IsDir() {
-		die(fmt.Sprintf("not dir: %s", dirPath))
-	}
-
 	if strings.HasPrefix(dirPath, "./") {
 		dirPath = dirPath[2:]
 	}
@@ -136,9 +133,4 @@ func makeEndpointInfos(dirPath string) []endpointInfo {
 	})
 
 	return endpointInfos
-}
-
-func die(v string) {
-	os.Stderr.WriteString(v + "\n")
-	os.Exit(1)
 }
