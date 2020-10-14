@@ -5,21 +5,17 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
-type endpointInfo struct {
-	urlPath  string
-	filePath string
-}
+var cachedResponses map[string][]byte
 
 func main() {
 	dataPath := flag.String("data", "./data", "specify response dir")
@@ -27,14 +23,51 @@ func main() {
 	delay := flag.Int64("delay", 0, "mille sec delay for response")
 	flag.Parse()
 
-	endpointInfos := makeEndpointInfos(*dataPath)
+	fi, err := os.Stat(*dataPath)
+	if os.IsNotExist(err) || !fi.Mode().IsDir() {
+		log.Fatalf("No dir: %s", *dataPath)
+	}
+
+	cachedResponses = make(map[string][]byte)
 
 	watch(*dataPath)
 
 	log.Printf("start server on port %s", *port)
 	mux := http.NewServeMux()
-	registerEndpoints(mux, endpointInfos, *delay)
+	registerEndpoints(mux, *dataPath, *delay)
 	http.ListenAndServe(":"+*port, mux)
+}
+
+func registerEndpoints(mux *http.ServeMux, dataPath string, delay int64) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
+
+		printBody(r.Body)
+
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+
+		filePath := dataPath + "/" + r.URL.Path[1:]
+
+		cachedResponse := cachedResponses[filePath]
+		if cachedResponse != nil {
+			log.Println("use cache")
+			w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
+			fmt.Fprint(w, string(cachedResponse))
+			return
+		}
+
+		data, error := ioutil.ReadFile(filePath)
+		if error != nil {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("404"))
+			return
+		}
+
+		cachedResponses[filePath] = data
+
+		w.Header().Set("Content-Type", http.DetectContentType(data))
+		fmt.Fprint(w, string(data))
+	})
 }
 
 func watch(dataPath string) {
@@ -71,74 +104,13 @@ func watch(dataPath string) {
 	}
 }
 
-func registerEndpoints(mux *http.ServeMux, endpointInfos []endpointInfo, delay int64) {
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("404"))
-	})
-
-	for _, endpointInfo := range endpointInfos {
-		//bind local var
-		ei := endpointInfo
-		mux.HandleFunc(ei.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
-
-			data, error := ioutil.ReadFile(ei.filePath)
-			if error != nil {
-				w.WriteHeader(http.StatusNotFound)
-				w.Write([]byte("404"))
-				return
-			}
-
-			time.Sleep(time.Duration(delay) * time.Millisecond)
-			dump, _ := ioutil.ReadAll(r.Body)
-
-			var prettyJSON bytes.Buffer
-			error = json.Indent(&prettyJSON, dump, "", "  ")
-			if error == nil {
-				log.Printf("request body: %s\n", prettyJSON.Bytes())
-			} else {
-				log.Printf("request body: %s\n", string(dump))
-			}
-			w.Header().Set("Content-Type", http.DetectContentType(data))
-			fmt.Fprint(w, string(data))
-		})
+func printBody(r io.Reader) {
+	dump, _ := ioutil.ReadAll(r)
+	var prettyJSON bytes.Buffer
+	error := json.Indent(&prettyJSON, dump, "", "  ")
+	if error == nil {
+		log.Printf("request body: %s\n", prettyJSON.Bytes())
+	} else {
+		log.Printf("request body: %s\n", string(dump))
 	}
-}
-
-func makeEndpointInfos(dirPath string) []endpointInfo {
-	fi, err := os.Stat(dirPath)
-	if os.IsNotExist(err) {
-		die(fmt.Sprintf("not exists: %s", dirPath))
-	}
-	if !fi.Mode().IsDir() {
-		die(fmt.Sprintf("not dir: %s", dirPath))
-	}
-
-	if strings.HasPrefix(dirPath, "./") {
-		dirPath = dirPath[2:]
-	}
-
-	var endpointInfos []endpointInfo
-	filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		urlPath := strings.Replace(filePath, dirPath, "", 1)
-		urlPath = strings.Replace(urlPath, "__S__", "/", -1)
-
-		endpointInfos = append(endpointInfos, endpointInfo{
-			urlPath,
-			filePath,
-		})
-		return nil
-	})
-
-	return endpointInfos
-}
-
-func die(v string) {
-	os.Stderr.WriteString(v + "\n")
-	os.Exit(1)
 }
