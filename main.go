@@ -50,7 +50,6 @@ func registerEndpoints(mux *http.ServeMux, dataPath string, delay int64) {
 
 		cachedResponse := cachedResponses[filePath]
 		if cachedResponse != nil {
-			log.Println("use cache")
 			w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
 			fmt.Fprint(w, string(cachedResponse))
 			return
@@ -84,9 +83,9 @@ func watch(dataPath string) {
 				if !ok {
 					return
 				}
-				log.Println("event:", event)
 				if event.Op&fsnotify.Write == fsnotify.Write {
-					log.Panicln("modified file:", event.Name)
+					log.Printf("%s modified. Cache is cleared", event.Name)
+					cachedResponses[event.Name] = nil
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
