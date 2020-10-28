@@ -5,19 +5,17 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
-type EndpointInfo struct {
-	urlPath  string
-	filePath string
-}
+var cachedResponses map[string][]byte
 
 func main() {
 	dataPath := flag.String("data", "./data", "specify response dir")
@@ -25,83 +23,93 @@ func main() {
 	delay := flag.Int64("delay", 0, "mille sec delay for response")
 	flag.Parse()
 
-	endpointInfos := makeEndpointInfos(*dataPath)
+	fi, err := os.Stat(*dataPath)
+	if os.IsNotExist(err) || !fi.Mode().IsDir() {
+		log.Fatalf("No dir: %s", *dataPath)
+	}
 
-	info("start server on port " + *port)
+	cachedResponses = make(map[string][]byte)
+
+	watch(*dataPath)
+
+	log.Printf("start server on port %s", *port)
 	mux := http.NewServeMux()
-	registerEndpoints(mux, endpointInfos, *delay)
+	registerEndpoints(mux, *dataPath, *delay)
 	http.ListenAndServe(":"+*port, mux)
 }
 
-func registerEndpoints(mux *http.ServeMux, endpointInfos []EndpointInfo, delay int64) {
-	mux.HandleFunc("/", func(writer http.ResponseWriter, r *http.Request) {
-		info(r.URL.String())
-		info(r.UserAgent())
-		writer.WriteHeader(http.StatusNotFound)
-		writer.Write([]byte("404"))
-	})
+func registerEndpoints(mux *http.ServeMux, dataPath string, delay int64) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
 
-	for _, endpointInfo := range endpointInfos {
-		data, error := ioutil.ReadFile(endpointInfo.filePath)
+		printBody(r.Body)
+
+		time.Sleep(time.Duration(delay) * time.Millisecond)
+
+		filePath := dataPath + "/" + r.URL.Path[1:]
+
+		cachedResponse := cachedResponses[filePath]
+		if cachedResponse != nil {
+			w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
+			fmt.Fprint(w, string(cachedResponse))
+			return
+		}
+
+		data, error := ioutil.ReadFile(filePath)
 		if error != nil {
-			die(fmt.Sprintf("file doesn't exist: %s", endpointInfo.filePath))
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte("404"))
+			return
 		}
-		info("register endpoint on " + endpointInfo.urlPath)
-		mux.HandleFunc(endpointInfo.urlPath, func(w http.ResponseWriter, r *http.Request) {
-			info(fmt.Sprintf("%s %s %s", r.Method, r.URL, r.Proto))
-			info(r.UserAgent())
-			time.Sleep(time.Duration(delay) * time.Millisecond)
-			dump, _ := ioutil.ReadAll(r.Body)
 
-			var prettyJSON bytes.Buffer
-			error := json.Indent(&prettyJSON, dump, "", "  ")
-			if error == nil {
-				info(string(prettyJSON.Bytes()))
-			} else {
-				info(string(dump))
-			}
-			w.Header().Set("Content-Type", http.DetectContentType(data))
-			fmt.Fprint(w, string(data))
-		})
-	}
-}
+		cachedResponses[filePath] = data
 
-func makeEndpointInfos(dirPath string) []EndpointInfo {
-	fi, err := os.Stat(dirPath)
-	if os.IsNotExist(err) {
-		die(fmt.Sprintf("not exists: %s", dirPath))
-	}
-	if !fi.Mode().IsDir() {
-		die(fmt.Sprintf("not dir: %s", dirPath))
-	}
-
-	if strings.HasPrefix(dirPath, "./") {
-		dirPath = dirPath[2:]
-	}
-
-	var endpointInfos []EndpointInfo
-	filepath.Walk(dirPath, func(filePath string, info os.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		urlPath := strings.Replace(filePath, dirPath, "", 1)
-		urlPath = strings.Replace(urlPath, "__S__", "/", -1)
-
-		endpointInfos = append(endpointInfos, EndpointInfo{
-			urlPath,
-			filePath,
-		})
-		return nil
+		w.Header().Set("Content-Type", http.DetectContentType(data))
+		fmt.Fprint(w, string(data))
 	})
-
-	return endpointInfos
 }
 
-func info(v string) {
-	log.Println(v)
+func watch(dataPath string) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		defer watcher.Close()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Printf("%s modified. Cache is cleared", event.Name)
+					cachedResponses[event.Name] = nil
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Println("error:", err)
+			}
+		}
+	}()
+
+	log.Println("start watching:", dataPath)
+	err = watcher.Add(dataPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func die(v string) {
-	os.Stderr.WriteString(v + "\n")
-	os.Exit(1)
+func printBody(r io.Reader) {
+	dump, _ := ioutil.ReadAll(r)
+	var prettyJSON bytes.Buffer
+	error := json.Indent(&prettyJSON, dump, "", "  ")
+	if error == nil {
+		log.Printf("request body: %s\n", prettyJSON.Bytes())
+	} else {
+		log.Printf("request body: %s\n", string(dump))
+	}
 }
