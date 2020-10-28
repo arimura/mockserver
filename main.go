@@ -33,20 +33,36 @@ func main() {
 	watch(*dataPath)
 
 	log.Printf("start server on port %s", *port)
-	mux := http.NewServeMux()
-	registerEndpoints(mux, *dataPath, *delay)
-	http.ListenAndServe(":"+*port, mux)
+	s := &server{
+		mux:      http.NewServeMux(),
+		dataPath: *dataPath,
+		port:     *port,
+		delay:    *delay,
+	}
+	s.run()
 }
 
-func registerEndpoints(mux *http.ServeMux, dataPath string, delay int64) {
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+type server struct {
+	dataPath string
+	port     string
+	delay    int64
+	mux      *http.ServeMux
+}
+
+func (s *server) run() {
+	s.registerEndpoints()
+	http.ListenAndServe(":"+s.port, s.mux)
+}
+
+func (s *server) registerEndpoints() {
+	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
 
-		printBody(r.Body)
+		s.printBody(r.Body)
 
-		time.Sleep(time.Duration(delay) * time.Millisecond)
+		time.Sleep(time.Duration(s.delay) * time.Millisecond)
 
-		filePath := dataPath + "/" + r.URL.Path[1:]
+		filePath := s.dataPath + "/" + r.URL.Path[1:]
 
 		cachedResponse := cachedResponses[filePath]
 		if cachedResponse != nil {
@@ -67,6 +83,17 @@ func registerEndpoints(mux *http.ServeMux, dataPath string, delay int64) {
 		w.Header().Set("Content-Type", http.DetectContentType(data))
 		fmt.Fprint(w, string(data))
 	})
+}
+
+func (s *server) printBody(r io.Reader) {
+	dump, _ := ioutil.ReadAll(r)
+	var prettyJSON bytes.Buffer
+	error := json.Indent(&prettyJSON, dump, "", "  ")
+	if error == nil {
+		log.Printf("request body: %s\n", prettyJSON.Bytes())
+	} else {
+		log.Printf("request body: %s\n", string(dump))
+	}
 }
 
 func watch(dataPath string) {
@@ -100,16 +127,5 @@ func watch(dataPath string) {
 	err = watcher.Add(dataPath)
 	if err != nil {
 		log.Fatal(err)
-	}
-}
-
-func printBody(r io.Reader) {
-	dump, _ := ioutil.ReadAll(r)
-	var prettyJSON bytes.Buffer
-	error := json.Indent(&prettyJSON, dump, "", "  ")
-	if error == nil {
-		log.Printf("request body: %s\n", prettyJSON.Bytes())
-	} else {
-		log.Printf("request body: %s\n", string(dump))
 	}
 }
