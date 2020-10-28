@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -19,6 +20,7 @@ func main() {
 	dataPath := flag.String("data", "./data", "specify response dir")
 	port := flag.String("port", "8080", "specify port")
 	delay := flag.Int64("delay", 0, "mille sec delay for response")
+	requestQueryUnescape := flag.Bool("requestQueryUnescape", true, "unescape query of request in log")
 	flag.Parse()
 
 	fi, err := os.Stat(*dataPath)
@@ -28,21 +30,23 @@ func main() {
 
 	log.Printf("start server on port %s", *port)
 	s := &server{
-		mux:             http.NewServeMux(),
-		dataPath:        *dataPath,
-		port:            *port,
-		delay:           *delay,
-		cachedResponses: make(map[string][]byte),
+		mux:                  http.NewServeMux(),
+		dataPath:             *dataPath,
+		port:                 *port,
+		delay:                *delay,
+		cachedResponses:      make(map[string][]byte),
+		requestQueryUnescape: *requestQueryUnescape,
 	}
 	s.run()
 }
 
 type server struct {
-	dataPath        string
-	port            string
-	delay           int64
-	mux             *http.ServeMux
-	cachedResponses map[string][]byte
+	dataPath             string
+	port                 string
+	delay                int64
+	mux                  *http.ServeMux
+	cachedResponses      map[string][]byte
+	requestQueryUnescape bool
 }
 
 func (s *server) run() {
@@ -53,7 +57,14 @@ func (s *server) run() {
 
 func (s *server) registerEndpoints() {
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.UserAgent())
+		var u string
+		if s.requestQueryUnescape {
+			u, _ = url.QueryUnescape(r.URL.String())
+		} else {
+			u = r.URL.String()
+		}
+
+		log.Printf("%s %s %s %s\n", r.Method, u, r.Proto, r.UserAgent())
 
 		s.printBody(r.Body)
 
