@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"text/template"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -69,8 +70,21 @@ func (s *Server) registerEndpoints() {
 			s.CachedResponses[filePath] = data
 		}
 
+		res := string(data)
+		if s.MacroExpand {
+			var vals interface{}
+			e := json.Unmarshal(body, &vals)
+			if e == nil {
+				template, templateError := template.New("t").Parse(res)
+				if templateError == nil {
+					template.Execute(w, vals)
+					return
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", http.DetectContentType(data))
-		fmt.Fprint(w, string(data))
+		fmt.Fprint(w, res)
 	})
 }
 
