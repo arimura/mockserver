@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -41,13 +40,16 @@ func (s *Server) registerEndpoints() {
 
 		log.Printf("%s %s %s %s\n", r.Method, u, r.Proto, r.UserAgent())
 
-		s.printBody(r.Body)
+		body, bodyError := ioutil.ReadAll(r.Body)
+		if bodyError == nil && body != nil {
+			s.printAsJSON(body)
+		}
 
 		time.Sleep(time.Duration(s.Delay) * time.Millisecond)
 
 		filePath := s.DataPath + "/" + r.URL.Path[1:]
 
-		if s.MacroExpand {
+		if !s.MacroExpand {
 			cachedResponse := s.CachedResponses[filePath]
 			if cachedResponse != nil {
 				w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
@@ -63,7 +65,7 @@ func (s *Server) registerEndpoints() {
 			return
 		}
 
-		if s.MacroExpand {
+		if !s.MacroExpand {
 			s.CachedResponses[filePath] = data
 		}
 
@@ -72,14 +74,13 @@ func (s *Server) registerEndpoints() {
 	})
 }
 
-func (s *Server) printBody(r io.Reader) {
-	dump, _ := ioutil.ReadAll(r)
+func (s *Server) printAsJSON(body []byte) {
 	var prettyJSON bytes.Buffer
-	error := json.Indent(&prettyJSON, dump, "", "  ")
+	error := json.Indent(&prettyJSON, body, "", "  ")
 	if error == nil {
 		log.Printf("request body: %s\n", prettyJSON.Bytes())
 	} else {
-		log.Printf("request body: %s\n", string(dump))
+		log.Printf("request body: %s\n", string(body))
 	}
 }
 
