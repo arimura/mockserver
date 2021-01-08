@@ -21,6 +21,7 @@ type Server struct {
 	Mux                  *http.ServeMux
 	CachedResponses      map[string][]byte
 	RequestQueryUnescape bool
+	MacroExpand          bool
 }
 
 func (s *Server) Run() {
@@ -46,11 +47,13 @@ func (s *Server) registerEndpoints() {
 
 		filePath := s.DataPath + "/" + r.URL.Path[1:]
 
-		cachedResponse := s.CachedResponses[filePath]
-		if cachedResponse != nil {
-			w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
-			fmt.Fprint(w, string(cachedResponse))
-			return
+		if s.MacroExpand {
+			cachedResponse := s.CachedResponses[filePath]
+			if cachedResponse != nil {
+				w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
+				fmt.Fprint(w, string(cachedResponse))
+				return
+			}
 		}
 
 		data, error := ioutil.ReadFile(filePath)
@@ -60,7 +63,9 @@ func (s *Server) registerEndpoints() {
 			return
 		}
 
-		s.CachedResponses[filePath] = data
+		if s.MacroExpand {
+			s.CachedResponses[filePath] = data
+		}
 
 		w.Header().Set("Content-Type", http.DetectContentType(data))
 		fmt.Fprint(w, string(data))

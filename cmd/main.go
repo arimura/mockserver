@@ -14,6 +14,7 @@ func main() {
 	port := flag.String("port", "8080", "specify port")
 	delay := flag.Int64("delay", 0, "mille sec delay for response")
 	requestQueryUnescape := flag.Bool("requestQueryUnescape", true, "unescape query of request in log")
+	macroExpand := flag.Bool("macroExpand", true, "use macro and stop using cache")
 	flag.Parse()
 
 	fi, err := os.Stat(*dataPath)
@@ -29,6 +30,7 @@ func main() {
 		Delay:                *delay,
 		CachedResponses:      make(map[string][]byte),
 		RequestQueryUnescape: *requestQueryUnescape,
+		MacroExpand:          *macroExpand,
 	}
 	s.Run()
 }
