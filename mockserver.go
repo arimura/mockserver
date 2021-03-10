@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"text/template"
 	"time"
 
@@ -50,7 +51,9 @@ func (s *Server) registerEndpoints() {
 
 		filePath := s.DataPath + "/" + r.URL.Path[1:]
 
-		if !s.MacroExpand {
+		isRedirect := strings.HasPrefix(r.URL.Path[1:], "redirect")
+
+		if !isRedirect || !s.MacroExpand {
 			cachedResponse := s.CachedResponses[filePath]
 			if cachedResponse != nil {
 				w.Header().Set("Content-Type", http.DetectContentType(cachedResponse))
@@ -66,6 +69,11 @@ func (s *Server) registerEndpoints() {
 			return
 		}
 
+		if isRedirect {
+			w.Header().Set("Location", string(data))
+			w.WriteHeader(http.StatusMovedPermanently)
+			return
+		}
 		if !s.MacroExpand {
 			s.CachedResponses[filePath] = data
 		}
