@@ -71,6 +71,7 @@ func (s *Server) registerEndpoints() {
 
 		if isRedirect {
 			w.Header().Set("Location", string(data))
+			w.Header().Set("Cache-Control", "no-store")
 			w.WriteHeader(http.StatusFound)
 			return
 		}
