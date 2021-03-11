@@ -19,7 +19,7 @@ $ curl 'http://localhost:8000/hoge' -d '{"foo":"bar"}'
 Hello bar
 ```
 ## Redirection
-`data/redirec` is special path for redirection.
+`data/redirect` is special path for redirection.
 ```sh
 $ cat data/redirect/fuga
 https://example.com
