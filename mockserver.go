@@ -71,7 +71,7 @@ func (s *Server) registerEndpoints() {
 
 		if isRedirect {
 			w.Header().Set("Location", string(data))
-			w.WriteHeader(http.StatusTemporaryRedirect)
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 		if !s.MacroExpand {
